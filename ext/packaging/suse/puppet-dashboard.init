@@ -1,0 +1,118 @@
+#!/bin/bash
+#
+# Init script for puppet-dashboard
+#
+# chkconfig: - 85 15
+# description: Init script for puppet-dashboard
+
+### BEGIN INIT INFO
+# Provides: puppet-dashboard
+# Required-Start: $local_fs $network $syslog
+# Should-Start:
+# Required-Stop:
+# Default-Start: 3 4 5
+# Default-Stop: 0 1 2 6
+# Short-Description: puppet-dashboard
+# Description: Dashboard for the puppet system management tool.
+### END INIT INFO
+
+# Source function library.
+[ -f /etc/rc.status ] && . /etc/rc.status
+
+if [ -f /etc/sysconfig/puppet-dashboard ]; then
+    . /etc/sysconfig/puppet-dashboard
+fi
+
+DASHBOARD_HOME=${DASHBOARD_HOME:-/usr/share/puppet-dashboard}
+DASHBOARD_USER=${DASHBOARD_USER:-puppet-dashboard}
+DASHBOARD_RUBY=${DASHBOARD_RUBY:-/usr/bin/ruby}
+DASHBOARD_ENVIRONMENT=${DASHBOARD_ENVIRONMENT:-production}
+DASHBOARD_IFACE=${DASHBOARD_IFACE:-0.0.0.0}
+DASHBOARD_PORT=${DASHBOARD_PORT:-3000}
+
+PIDFILE=/var/run/puppet-dashboard.pid
+RETVAL=0
+
+check_status() {
+        pidofproc -p ${PIDFILE} su > /dev/null
+}
+
+start() {
+        echo -n $"Starting Puppet Dashboard: "
+
+        # Don't start it twice.
+        check_status
+        RETVAL=$?
+        if [ $RETVAL = 0 ]; then
+            echo -n "Already running"
+            rc_status -v
+            echo
+            return 0
+        fi
+
+        # This is a dirty, dirty hack, but it's rather difficult to get
+        # script/server to daemonize in any way, and still give us useful
+        # debugging output (or a real exit code) if it fails to start.
+        # Also: We don't have reliable access to start-stop-daemon.
+
+        su -s /bin/sh -c "${DASHBOARD_RUBY} ${DASHBOARD_HOME}/script/server -e ${DASHBOARD_ENVIRONMENT} -p ${DASHBOARD_PORT} -b ${DASHBOARD_IFACE}" ${DASHBOARD_USER} &
+        local PID=$!
+        echo $PID > ${PIDFILE}
+
+        sleep 5
+
+        check_status
+        RETVAL=$?
+
+        if [ $RETVAL = 0 ]; then
+            rc_status -v
+        else
+            rc_failed
+        fi
+
+        return $RETVAL
+}
+
+stop() {
+        echo -n $"Stopping Puppet Dashboard: "
+        killproc -p ${PIDFILE} su
+        RETVAL=$?
+        if [ $RETVAL = 0 ]; then
+            rc_status -v
+        else
+            rc_failed
+        fi
+
+        return $RETVAL
+}
+
+# See how we were called.
+case "$1" in
+    start)
+        start
+        exit $?
+        ;;
+    stop)
+        stop
+        exit $?
+        ;;
+    restart)
+        stop && start
+        exit $?
+        ;;
+    status)
+        echo -n 'Puppet Dashboard is '
+        pidofproc -p ${PIDFILE} su > /dev/null
+        RETVAL=$?
+        if [ $RETVAL = 0 ]; then
+            echo 'running'
+        else
+            echo 'stopped'
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+esac
+
+exit $RETVAL
