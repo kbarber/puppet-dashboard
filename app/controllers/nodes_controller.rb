@@ -102,10 +102,22 @@ class NodesController < InheritedResources::Base
   end
 
   def facts
+    # Render structured facts
+    facts_orig = resource.facts[:values].sort
+    facts = []
+    facts_orig.each do |factpair|
+      value = factpair[1]
+      if value.is_a? Hash or value.is_a? Array
+        value = JSON.pretty_generate(value)
+      end
+      facts << [factpair[0], value]
+    end
+
     respond_to do |format|
       format.html {
         begin
-          render :partial => 'nodes/facts', :locals => {:node => resource, :facts => resource.facts}
+          render :partial => 'nodes/facts', :locals => {:node => resource,
+            :facts => facts, :facts_timestamp => resource.facts[:timestamp]}
         rescue => e
           render :text => "Could not retrieve facts from inventory service: #{e.message}"
         end
